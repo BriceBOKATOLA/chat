@@ -1,0 +1,89 @@
+package chatserver;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.io.*;
+import java.net.*;
+import java.sql.*;
+
+public class ChatServer {
+    private static final int PORT = 5000;
+    private static Connection connection;
+
+    public static void main(String[] args) {
+        try {
+            ServerSocket serverSocket = new ServerSocket(PORT);
+            System.out.println("Serveur démarré sur le port " + PORT);
+
+            connectToDatabase();
+            
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                new ClientHandler(clientSocket).start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void connectToDatabase() {
+        try {
+            connection = DriverManager.getConnection("jdbc:sqlite:chat.db");
+            Statement statement = connection.createStatement();
+            statement.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, message TEXT)");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void saveMessage(String username, String message) {
+        try {
+            PreparedStatement stmt = connection.prepareStatement("INSERT INTO messages (username, message) VALUES (?, ?)");
+            stmt.setString(1, username);
+            stmt.setString(2, message);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static class ClientHandler extends Thread {
+        private Socket socket;
+        private PrintWriter writer;
+        private BufferedReader reader;
+        private String username;
+
+        public ClientHandler(Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                writer = new PrintWriter(socket.getOutputStream(), true);
+
+                username = reader.readLine();
+                String message;
+                while ((message = reader.readLine()) != null) {
+                    System.out.println(username + ": " + message);
+                    saveMessage(username, message);
+                    broadcastMessage(username + ": " + message);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private static void broadcastMessage(String message) {
+        System.out.println(message);
+    }
+}
